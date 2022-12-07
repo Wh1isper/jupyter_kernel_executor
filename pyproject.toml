@@ -1,0 +1,84 @@
+[build-system]
+requires = ["hatchling>=1.4.0", "jupyterlab>=3.4.7,<4.0.0", "hatch-nodejs-version"]
+build-backend = "hatchling.build"
+
+[project]
+name = "jupyter_kernel_executor"
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.7"
+classifiers = [
+    "Framework :: Jupyter",
+    "Framework :: Jupyter :: JupyterLab",
+    "Framework :: Jupyter :: JupyterLab :: 3",
+    "Framework :: Jupyter :: JupyterLab :: Extensions",
+    "Framework :: Jupyter :: JupyterLab :: Extensions :: Prebuilt",
+    "License :: OSI Approved :: BSD License",
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.7",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+]
+dependencies = [
+    "jupyter_server>=1.6,<3",
+    "jupyter_kernel_client"
+]
+dynamic = ["version", "description", "authors", "urls", "keywords"]
+
+[project.optional-dependencies]
+test = [
+    "coverage",
+    "pytest",
+    "pytest-asyncio",
+    "pytest-cov",
+    "pytest-tornasync",
+    "nbformat",
+]
+
+fileid = [
+    "jupyter_server_fileid",
+]
+
+[tool.hatch.version]
+source = "nodejs"
+
+[tool.hatch.metadata.hooks.nodejs]
+fields = ["description", "authors", "urls"]
+
+[tool.hatch.build.targets.sdist]
+artifacts = ["jupyter_kernel_executor/labextension"]
+exclude = [".github", "binder"]
+
+[tool.hatch.build.targets.wheel.shared-data]
+"jupyter_kernel_executor/labextension" = "share/jupyter/labextensions/jupyter_kernel_executor"
+"install.json" = "share/jupyter/labextensions/jupyter_kernel_executor/install.json"
+"jupyter-config/server-config" = "etc/jupyter/jupyter_server_config.d"
+"jupyter-config/nb-config" = "etc/jupyter/jupyter_notebook_config.d"
+
+[tool.hatch.build.hooks.version]
+path = "jupyter_kernel_executor/_version.py"
+
+[tool.hatch.build.hooks.jupyter-builder]
+dependencies = ["hatch-jupyter-builder>=0.5"]
+build-function = "hatch_jupyter_builder.npm_builder"
+ensured-targets = [
+    "jupyter_kernel_executor/labextension/static/style.js",
+    "jupyter_kernel_executor/labextension/package.json",
+]
+skip-if-exists = ["jupyter_kernel_executor/labextension/static/style.js"]
+
+[tool.hatch.build.hooks.jupyter-builder.build-kwargs]
+build_cmd = "build:prod"
+npm = ["jlpm"]
+
+[tool.hatch.build.hooks.jupyter-builder.editable-build-kwargs]
+build_cmd = "install:extension"
+npm = ["jlpm"]
+source_dir = "src"
+build_dir = "jupyter_kernel_executor/labextension"
+
+[tool.jupyter-releaser.options]
+version_cmd = "hatch version"
