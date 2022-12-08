@@ -24,7 +24,9 @@ classifiers = [
 ]
 dependencies = [
     "jupyter_server>=1.6,<3",
-    "jupyter_kernel_client"
+    "jupyter_kernel_client",
+    "watchfiles",
+    "anyio"
 ]
 dynamic = ["version", "description", "authors", "urls", "keywords"]
 
@@ -40,7 +42,6 @@ test = [
 
 fileid = [
     "jupyter_server_fileid==0.6.0",
-    "watchfiles",
 ]
 
 [tool.hatch.version]

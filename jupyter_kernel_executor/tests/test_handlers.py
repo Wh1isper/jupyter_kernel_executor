@@ -16,7 +16,7 @@ def code():
     return '''
 import time
 print('hello')
-time.sleep(1)
+time.sleep(3)
 print('world')
 '''
 
@@ -155,6 +155,8 @@ async def test_move_file_when_execute(jp_fetch, ipynb):
     response = await jp_fetch('api', 'kernels', kernel_id, 'execute', method='POST', body=json.dumps(body))
     assert response.code == 200
     real_path = rename_random(real_path)
+    await asyncio.sleep(0.1)
+
     # wait for finished
     await wait_for_finished(jp_fetch, kernel_id, ipynb_path, cell_id)
 

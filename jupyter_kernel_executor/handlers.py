@@ -10,6 +10,7 @@ from jupyter_server.utils import ensure_async
 from watchfiles import awatch, Change
 
 from jupyter_kernel_client.client import KernelWebsocketClient
+from jupyter_kernel_executor.file_watcher import FileWatcher
 
 
 class ExecuteCellHandler(APIHandler):
@@ -18,11 +19,14 @@ class ExecuteCellHandler(APIHandler):
     ] = dict()
     saving_document: Dict[str, asyncio.Task] = dict()
     watch_document: Dict[str, asyncio.Task] = dict()
+    global_watcher = FileWatcher()
     SAVE_INTERVAL = 0.3
 
     def initialize(self):
         self.execution_start_datetime: Optional[datetime] = None
         self.execution_end_datetime: Optional[datetime] = None
+        watch_dir = self.normal_path(self.serverapp.root_dir or '.')
+        self.global_watcher.start_if_not(self, watch_dir)
 
     @property
     def file_id_manager(self):
@@ -52,6 +56,13 @@ class ExecuteCellHandler(APIHandler):
 
         if self.file_id_manager:
             # Compatible with the case where document_id not found
+            row = self.file_id_manager.con.execute("SELECT path, ino FROM Files WHERE id = ?",
+                                                   (document_id,)).fetchone()
+            path, ino = row
+            stat_info = self.file_id_manager._stat(path)
+
+            if stat_info and ino == stat_info.ino:
+                return self.file_id_manager._from_normalized_path(path)
             path = self.file_id_manager.get_path(document_id) or document_id
             self.log.debug(f'convert id {document_id} to file {path}')
         else:
@@ -74,6 +85,9 @@ class ExecuteCellHandler(APIHandler):
 
     @tornado.web.authenticated
     async def get(self, kernel_id):
+        if not self.kernel_manager.get_kernel(kernel_id):
+            raise tornado.web.HTTPError(404, f"No such kernel {kernel_id}")
+
         records = self.executing_cell.get(kernel_id, [])
         # fixme: Competition when watcher not notified but query here
         response = [
@@ -107,6 +121,9 @@ class ExecuteCellHandler(APIHandler):
             not_write(bool): default to False,False means try to write result to document's cell
 
         """
+        if not self.kernel_manager.get_kernel(kernel_id):
+            raise tornado.web.HTTPError(404, f"No such kernel {kernel_id}")
+
         model = self.get_json_body()
         path = model.get('path')
         cell_id = model.get('cell_id')
@@ -238,17 +255,6 @@ class ExecuteCellHandler(APIHandler):
     async def _save(self, document_id, model):
         cm = self.contents_manager
 
-        def cleanup(task):
-            # don't cleanup running saving job
-            if document_id in self.saving_document:
-                def _():
-                    del self.saving_document[document_id]
-
-                if self.saving_document[document_id].done():
-                    del self.saving_document[document_id]
-                else:
-                    self.saving_document[document_id].add_done_callback(_)
-
         async def save():
             await asyncio.sleep(self.SAVE_INTERVAL)
             path = self.get_path(document_id)
@@ -257,7 +263,6 @@ class ExecuteCellHandler(APIHandler):
         if document_id in self.saving_document:
             self.saving_document[document_id].cancel()
         task = asyncio.create_task(save())
-        task.add_done_callback(cleanup)
         self.saving_document[document_id] = task
 
     def watch(self, document_id):
