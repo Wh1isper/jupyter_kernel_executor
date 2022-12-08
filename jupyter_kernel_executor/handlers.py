@@ -1,27 +1,12 @@
 import asyncio
 import json
-from concurrent.futures import Future
 from typing import Optional
-from uuid import uuid4
 
 import tornado.web
-from jupyter_client.session import Session
 from jupyter_server.base.handlers import APIHandler
-from jupyter_server.services.kernels.kernelmanager import MappingKernelManager
 from jupyter_server.utils import ensure_async
-import nbformat
 
 from jupyter_kernel_client.client import KernelWebsocketClient
-from jupyter_kernel_executor.executor import ExecutorManager
-
-
-def _ensure_future(f):
-    """Wrap a concurrent future as an asyncio future if there is a running loop."""
-    try:
-        asyncio.get_running_loop()
-        return asyncio.wrap_future(f)
-    except RuntimeError:
-        return f
 
 
 class ExecuteCellHandler(APIHandler):
@@ -32,17 +17,40 @@ class ExecuteCellHandler(APIHandler):
         return self.settings.get("file_id_manager")
 
     def get_path(self, document_id):
+        if not document_id:
+            return None
+
         if self.file_id_manager:
-            # Compatible with the case where document_id is path
+            # Compatible with the case where document_id not found
             path = self.file_id_manager.get_path(document_id) or document_id
         else:
             path = document_id
         return path
 
+    def get_document_id(self, path):
+        if not path:
+            return None
+
+        if self.file_id_manager:
+            # Compatible with the case where document_id not found
+            document_id = self.file_id_manager.get_id(path) or path
+        else:
+            document_id = path
+        return document_id
+
     @tornado.web.authenticated
     async def get(self, kernel_id):
+        records = self.executing_cell.get(kernel_id, [])
+
+        response = [
+            {
+                "path": self.get_path(record['document_id']),
+                "cell_id": record['cell_id'],
+            } for record in records
+        ]
+
         await self.finish(json.dumps(
-            self.executing_cell[kernel_id]
+            response
         ))
 
     def is_executing(self, kernel_id, document_id, cell_id):
@@ -52,23 +60,24 @@ class ExecuteCellHandler(APIHandler):
     async def post(self, kernel_id):
         """
         Json Body Required:
-            document_id(str): for ipynb file id or file path, currently file path
+            path(str): file path
             cell_id(str):  cell to be executed
             OR
             code(str): just execute the code here
 
         Optional:
-            block(bool): execute code sync or not, when document_id and cell_id available, default to False(not block)
+            block(bool): execute code sync or not, when path and cell_id available, default to False(not block)
                          or True(execute code sync), when block is True, response result
             not_write(bool): default to False,False means try to write result to document's cell
 
         """
         model = self.get_json_body()
-        document_id = model.get('document_id')
+        path = model.get('path')
         cell_id = model.get('cell_id')
         not_write = model.get('not_write', False)
+        document_id = self.get_document_id(path)
         if self.is_executing(kernel_id, document_id, cell_id):
-            self.log.info(f'cell {cell_id} of {document_id} is executing')
+            self.log.info(f'cell {cell_id} of {path}(id:{document_id}) is executing')
             return await self.finish(json.dumps(
                 model
             ))

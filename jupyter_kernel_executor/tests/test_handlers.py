@@ -49,9 +49,9 @@ def assert_ipynb_cell_outputs(real_path, cell_id, outputs):
     raise KeyError('cell not found')
 
 
-async def wait_for_finished(jp_fetch, kernel_id, document_id, cell_id):
+async def wait_for_finished(jp_fetch, kernel_id, path, cell_id):
     body = {
-        "document_id": document_id,
+        "path": path,
         "cell_id": cell_id,
     }
     for _ in range(10 * INTERVAL):
@@ -74,7 +74,7 @@ async def test_execute_cell(jp_fetch, ipynb):
     kernel_id = json.loads(kernel_response.body)['id']
 
     body = {
-        "document_id": ipynb_path,
+        "path": ipynb_path,
         "cell_id": cell_id,
     }
 
