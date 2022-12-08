@@ -1,20 +1,23 @@
 import asyncio
 import json
 import os
-from typing import Optional, Dict
+from typing import Optional, Dict, List
 from datetime import datetime
 
 import tornado.web
 from jupyter_server.base.handlers import APIHandler
 from jupyter_server.utils import ensure_async
+from watchfiles import awatch, Change
 
 from jupyter_kernel_client.client import KernelWebsocketClient
 
 
 class ExecuteCellHandler(APIHandler):
-    executing_cell = dict()
+    executing_cell: Dict[str, List[
+        Dict[str, str]]
+    ] = dict()
     saving_document: Dict[str, asyncio.Task] = dict()
-
+    watch_document: Dict[str, asyncio.Task] = dict()
     SAVE_INTERVAL = 0.3
 
     def initialize(self):
@@ -25,20 +28,17 @@ class ExecuteCellHandler(APIHandler):
     def file_id_manager(self):
         return self.settings.get("file_id_manager")
 
-    def abspath(self, path):
+    def normal_path(self, path):
         if not path:
             return None
-        if os.path.abspath(path):
-            return path
 
-        path = os.path.join(self.serverapp.root_dir, path)
-        if not os.path.abspath(path):
-            path = os.path.abspath(path)
+        if self.file_id_manager:
+            return self.file_id_manager._normalize_path(path)
         return path
 
     def index(self, path):
         # file_id_manager prefer abs path
-        path = self.abspath(path)
+        path = self.normal_path(path)
         if not path:
             return None
         if self.file_id_manager:
@@ -60,7 +60,7 @@ class ExecuteCellHandler(APIHandler):
 
     def get_document_id(self, path):
         # file_id_manager prefer abs path
-        path = self.abspath(path)
+        path = self.normal_path(path)
         if not path:
             return None
 
@@ -75,7 +75,7 @@ class ExecuteCellHandler(APIHandler):
     @tornado.web.authenticated
     async def get(self, kernel_id):
         records = self.executing_cell.get(kernel_id, [])
-
+        # fixme: Competition when watcher not notified but query here
         response = [
             {
                 "path": self.get_path(record['document_id']),
@@ -174,27 +174,28 @@ class ExecuteCellHandler(APIHandler):
         return result
 
     async def pre_execute(self, kernel_id, document_id, cell_id):
-        self.executing_cell.setdefault(kernel_id, []).append(
-            self.get_record(document_id, cell_id)
-        )
+        if document_id and cell_id:
+            self.executing_cell.setdefault(kernel_id, []).append(
+                self.get_record(document_id, cell_id)
+            )
+            if self.file_id_manager:
+                self.watch(document_id)
         self.execution_start_datetime = datetime.now()
-        if self.file_id_manager:
-            # todo add watcher to watch file and update file id
-            pass
 
     async def post_execute(self, kernel_id, document_id, cell_id):
         self.execution_end_datetime = datetime.now()
         if not (document_id and cell_id):
             return
         records = self.executing_cell.get(kernel_id, [])
-        record = self.get_record(document_id, cell_id)
-        if record in records:
-            records.remove(record)
+        if document_id and cell_id:
+            record = self.get_record(document_id, cell_id)
+            if record in records:
+                records.remove(record)
         if self.file_id_manager:
             task = self.saving_document.get(document_id)
             if task:
                 await task
-                # todo remove watcher
+            self.unwatch(document_id)
 
     def get_record(self, document_id, cell_id):
         return {
@@ -236,26 +237,63 @@ class ExecuteCellHandler(APIHandler):
 
     async def _save(self, document_id, model):
         cm = self.contents_manager
-        # fixme: if file been update by others, document_id broken
-        # todo: add watcher to watch file and update file id in pre_execute and remove it in post_execute
-        path = self.get_path(document_id)
 
         def cleanup(task):
             # don't cleanup running saving job
-            if document_id in self.saving_document and self.saving_document[document_id].done():
-                del self.saving_document[document_id]
+            if document_id in self.saving_document:
+                def _():
+                    del self.saving_document[document_id]
+
+                if self.saving_document[document_id].done():
+                    del self.saving_document[document_id]
+                else:
+                    self.saving_document[document_id].add_done_callback(_)
 
         async def save():
             await asyncio.sleep(self.SAVE_INTERVAL)
+            path = self.get_path(document_id)
             await ensure_async(cm.save(model, path))
-            if self.file_id_manager:
-                self.file_id_manager.save(path)
 
         if document_id in self.saving_document:
             self.saving_document[document_id].cancel()
         task = asyncio.create_task(save())
         task.add_done_callback(cleanup)
         self.saving_document[document_id] = task
+
+    def watch(self, document_id):
+        assert self.file_id_manager
+
+        path = self.get_path(document_id)
+        path = os.path.join(self.serverapp.root_dir, path)
+
+        async def _():
+            # fixme There is this error on server shutdown
+            # RuntimeError: Already borrowed
+            # https://github.com/samuelcolvin/watchfiles/issues/200
+            # https://github.com/PyO3/pyo3/issues/2525
+            async for changes in awatch(path):
+                for change, _ in changes:
+                    if change == Change.modified:
+                        self.file_id_manager.save(path)
+                    else:
+                        return
+
+        if document_id not in self.watch_document:
+            self.watch_document[document_id] = asyncio.create_task(_())
+
+    def unwatch(self, document_id):
+        if document_id not in self.executing_document():
+            task = self.watch_document.get(document_id)
+            if task:
+                task.cancel()
+                del self.watch_document[document_id]
+
+    def executing_document(self):
+        executing_document = []
+        for kernel_records in self.executing_cell.values():
+            for records in kernel_records:
+                executing_document.append(records['document_id'])
+        return executing_document
 
 
 def setup_handlers(web_app):

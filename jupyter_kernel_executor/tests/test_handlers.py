@@ -2,6 +2,7 @@ import asyncio
 import os
 import json
 from pathlib import Path
+from uuid import uuid4
 
 import pytest
 import nbformat
@@ -32,6 +33,7 @@ def ipynb(jp_root_dir, code):
         nb = nbformat.read(f, as_version=nbformat.NO_CONVERT)
     cell_id = nb['cells'][0]['id']
     nb['cells'][0]['source'] = code
+    nb['cells'][0]['outputs'] = []
 
     with open(filepath, "w") as f:
         nbformat.write(nb, f)
@@ -62,7 +64,7 @@ async def wait_for_finished(jp_fetch, kernel_id, path, cell_id):
         "path": path,
         "cell_id": cell_id,
     }
-    for _ in range(10 * INTERVAL):
+    for _ in range(10):
         response = await jp_fetch('api', 'kernels', kernel_id, 'execute', method='GET')
         payload = json.loads(response.body)
         if body not in payload:
@@ -117,6 +119,80 @@ async def test_execute_code(jp_fetch):
     assert payload == {'code': "print('hello world')",
                        'outputs': [{'output_type': 'stream', 'name': 'stdout', 'text': 'hello world\n'}],
                        'execution_count': 1}
+
+
+def is_file_id_manager():
+    try:
+        import jupyter_server_fileid
+    except ImportError:
+        return False
+    return True
+
+
+def rename_random(real_path):
+    p = Path(real_path)
+    random_name = f'{uuid4().hex}.ipynb'
+    p = p.rename(p.parent / random_name)
+    return p.as_posix()
+
+
+@pytest.mark.skipif(not is_file_id_manager(), reason="no file id manager, cannot process it")
+async def test_move_file_when_execute(jp_fetch, ipynb):
+    ipynb_path, cell_id, real_path = ipynb
+
+    kernel_response = await jp_fetch('api', 'kernels', method='POST', body=json.dumps({
+        'name': 'python3',
+        'path': ipynb_path
+    }))
+    kernel_id = json.loads(kernel_response.body)['id']
+
+    body = {
+        "path": ipynb_path,
+        "cell_id": cell_id,
+    }
+
+    # execute code
+    response = await jp_fetch('api', 'kernels', kernel_id, 'execute', method='POST', body=json.dumps(body))
+    assert response.code == 200
+    real_path = rename_random(real_path)
+    # wait for finished
+    await wait_for_finished(jp_fetch, kernel_id, ipynb_path, cell_id)
+
+    outputs = [{'name': 'stdout', 'output_type': 'stream', 'text': 'hello\n'},
+               {'name': 'stdout', 'output_type': 'stream', 'text': 'world\n'}]
+    await assert_ipynb_cell_outputs(real_path, cell_id, outputs)
+
+
+@pytest.mark.skipif(not is_file_id_manager(), reason="no file id manager, cannot process it")
+async def test_modify_file_when_execute(jp_fetch, ipynb):
+    ipynb_path, cell_id, real_path = ipynb
+
+    kernel_response = await jp_fetch('api', 'kernels', method='POST', body=json.dumps({
+        'name': 'python3',
+        'path': ipynb_path
+    }))
+    kernel_id = json.loads(kernel_response.body)['id']
+
+    body = {
+        "path": ipynb_path,
+        "cell_id": cell_id,
+    }
+
+    # execute code
+    response = await jp_fetch('api', 'kernels', kernel_id, 'execute', method='POST', body=json.dumps(body))
+    assert response.code == 200
+
+    # modified time change, expect sync it normally
+    with open(real_path, 'a+') as f:
+        f.write('\n')
+    await asyncio.sleep(0.1)
+
+    # wait for finished
+    await wait_for_finished(jp_fetch, kernel_id, ipynb_path, cell_id)
+
+    outputs = [{'name': 'stdout', 'output_type': 'stream', 'text': 'hello\n'},
+               {'name': 'stdout', 'output_type': 'stream', 'text': 'world\n'}]
+    await assert_ipynb_cell_outputs(real_path, cell_id, outputs)
 
 
 if __name__ == '__main__':
