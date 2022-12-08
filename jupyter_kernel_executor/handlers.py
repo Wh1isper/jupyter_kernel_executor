@@ -1,6 +1,8 @@
 import asyncio
 import json
-from typing import Optional
+import os
+from typing import Optional, Dict
+from datetime import datetime
 
 import tornado.web
 from jupyter_server.base.handlers import APIHandler
@@ -11,10 +13,38 @@ from jupyter_kernel_client.client import KernelWebsocketClient
 
 class ExecuteCellHandler(APIHandler):
     executing_cell = dict()
+    saving_document: Dict[str, asyncio.Task] = dict()
+
+    SAVE_INTERVAL = 0.3
+
+    def initialize(self):
+        self.execution_start_datetime: Optional[datetime] = None
+        self.execution_end_datetime: Optional[datetime] = None
 
     @property
     def file_id_manager(self):
         return self.settings.get("file_id_manager")
+
+    def abspath(self, path):
+        if not path:
+            return None
+        if os.path.abspath(path):
+            return path
+
+        path = os.path.join(self.serverapp.root_dir, path)
+        if not os.path.abspath(path):
+            path = os.path.abspath(path)
+        return path
+
+    def index(self, path):
+        # file_id_manager prefer abs path
+        path = self.abspath(path)
+        if not path:
+            return None
+        if self.file_id_manager:
+            return self.file_id_manager.index(path)
+        else:
+            return path
 
     def get_path(self, document_id):
         if not document_id:
@@ -23,17 +53,21 @@ class ExecuteCellHandler(APIHandler):
         if self.file_id_manager:
             # Compatible with the case where document_id not found
             path = self.file_id_manager.get_path(document_id) or document_id
+            self.log.debug(f'convert id {document_id} to file {path}')
         else:
             path = document_id
         return path
 
     def get_document_id(self, path):
+        # file_id_manager prefer abs path
+        path = self.abspath(path)
         if not path:
             return None
 
         if self.file_id_manager:
             # Compatible with the case where document_id not found
-            document_id = self.file_id_manager.get_id(path) or path
+            document_id = self.file_id_manager.get_id(path) or self.index(path)
+            self.log.debug(f'tracking file {path} with id {document_id}')
         else:
             document_id = path
         return document_id
@@ -60,7 +94,9 @@ class ExecuteCellHandler(APIHandler):
     async def post(self, kernel_id):
         """
         Json Body Required:
-            path(str): file path
+            path(str): file path, When file_id_manager(jupyter_server_fileid) available,
+                       tracking path's file id automatically for remove or some other actions
+
             cell_id(str):  cell to be executed
             OR
             code(str): just execute the code here
@@ -75,7 +111,7 @@ class ExecuteCellHandler(APIHandler):
         path = model.get('path')
         cell_id = model.get('cell_id')
         not_write = model.get('not_write', False)
-        document_id = self.get_document_id(path)
+        document_id = self.index(path)
         if self.is_executing(kernel_id, document_id, cell_id):
             self.log.info(f'cell {cell_id} of {path}(id:{document_id}) is executing')
             return await self.finish(json.dumps(
@@ -130,22 +166,35 @@ class ExecuteCellHandler(APIHandler):
     async def execute(self, client, code, document_id, cell_id):
         kernel_id = client.kernel_id
         await self.pre_execute(kernel_id, document_id, cell_id)
-        result = await client.execute(code)
-        await self.post_execute(result, kernel_id, document_id, cell_id)
+        try:
+            result = await client.execute(code)
+        finally:
+            await self.post_execute(kernel_id, document_id, cell_id)
+        self.log.debug(f'execute time: {self.execution_end_datetime - self.execution_start_datetime}')
         return result
 
     async def pre_execute(self, kernel_id, document_id, cell_id):
         self.executing_cell.setdefault(kernel_id, []).append(
             self.get_record(document_id, cell_id)
         )
+        self.execution_start_datetime = datetime.now()
+        if self.file_id_manager:
+            # todo add watcher to watch file and update file id
+            pass
 
-    async def post_execute(self, result, kernel_id, document_id, cell_id):
+    async def post_execute(self, kernel_id, document_id, cell_id):
+        self.execution_end_datetime = datetime.now()
         if not (document_id and cell_id):
             return
         records = self.executing_cell.get(kernel_id, [])
         record = self.get_record(document_id, cell_id)
         if record in records:
             records.remove(record)
+        if self.file_id_manager:
+            task = self.saving_document.get(document_id)
+            if task:
+                await task
+                # todo remove watcher
 
     def get_record(self, document_id, cell_id):
         return {
@@ -166,7 +215,6 @@ class ExecuteCellHandler(APIHandler):
         raise tornado.web.HTTPError(404, f"cell {cell_id} not found in {path}")
 
     async def write_output(self, document_id, cell_id, result):
-        # todo add some timeout and interval prevent update too frequently
         if not document_id or not cell_id:
             return
         cm = self.contents_manager
@@ -184,7 +232,30 @@ class ExecuteCellHandler(APIHandler):
                     updated = True
                 break
         if updated:
+            await self._save(document_id, model)
+
+    async def _save(self, document_id, model):
+        cm = self.contents_manager
+        # fixme: if file been update by others, document_id broken
+        # todo: add watcher to watch file and update file id in pre_execute and remove it in post_execute
+        path = self.get_path(document_id)
+
+        def cleanup(task):
+            # don't cleanup running saving job
+            if document_id in self.saving_document and self.saving_document[document_id].done():
+                del self.saving_document[document_id]
+
+        async def save():
+            await asyncio.sleep(self.SAVE_INTERVAL)
             await ensure_async(cm.save(model, path))
+            if self.file_id_manager:
+                self.file_id_manager.save(path)
+
+        if document_id in self.saving_document:
+            self.saving_document[document_id].cancel()
+        task = asyncio.create_task(save())
+        task.add_done_callback(cleanup)
+        self.saving_document[document_id] = task
 
 
 def setup_handlers(web_app):

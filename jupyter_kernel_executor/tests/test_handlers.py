@@ -39,14 +39,22 @@ def ipynb(jp_root_dir, code):
     yield test_ipynb_path, cell_id, filepath.as_posix()
 
 
-def assert_ipynb_cell_outputs(real_path, cell_id, outputs):
-    with open(real_path) as f:
-        nb = nbformat.read(f, as_version=nbformat.NO_CONVERT)
-    for cell in nb['cells']:
-        if cell['id'] == cell_id:
-            assert cell['outputs'] == outputs
-            return
-    raise KeyError('cell not found')
+async def assert_ipynb_cell_outputs(real_path, cell_id, outputs):
+    cell_output = None
+    for _ in range(5):
+        # pool for save file
+        await asyncio.sleep(INTERVAL)
+        with open(real_path) as f:
+            nb = nbformat.read(f, as_version=nbformat.NO_CONVERT)
+        for cell in nb['cells']:
+            if cell['id'] == cell_id:
+                cell_output = cell['outputs']
+                try:
+                    assert cell['outputs'] == outputs
+                    return
+                except:
+                    pass
+    assert cell_output == outputs
 
 
 async def wait_for_finished(jp_fetch, kernel_id, path, cell_id):
@@ -87,7 +95,7 @@ async def test_execute_cell(jp_fetch, ipynb):
 
     outputs = [{'name': 'stdout', 'output_type': 'stream', 'text': 'hello\n'},
                {'name': 'stdout', 'output_type': 'stream', 'text': 'world\n'}]
-    assert_ipynb_cell_outputs(real_path, cell_id, outputs)
+    await assert_ipynb_cell_outputs(real_path, cell_id, outputs)
 
 
 async def test_execute_code(jp_fetch):
