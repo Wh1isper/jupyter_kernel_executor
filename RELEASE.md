@@ -25,6 +25,7 @@ hatch version <new-version>
 To create a Python source package (`.tar.gz`) and the binary package (`.whl`) in the `dist/` directory, do:
 
 ```bash
+rm -rf dist/*
 python -m build
 ```
 
