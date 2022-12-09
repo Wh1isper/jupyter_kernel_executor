@@ -11,6 +11,7 @@ from watchfiles import awatch, Change
 
 from jupyter_kernel_client.client import KernelWebsocketClient
 from jupyter_kernel_executor.file_watcher import FileWatcher
+from jupyter_kernel_executor.fileid import FileIDWrapper
 
 
 class ExecuteCellHandler(APIHandler):
@@ -19,69 +20,40 @@ class ExecuteCellHandler(APIHandler):
     ] = dict()
     saving_document: Dict[str, asyncio.Task] = dict()
     watch_document: Dict[str, asyncio.Task] = dict()
-    global_watcher = FileWatcher()
     SAVE_INTERVAL = 0.3
+
+    def prepare(self):
+        self.global_watcher.add(self)
+        return super().prepare()
+
+    def on_finish(self):
+        self.global_watcher.remove(self)
+        return super().prepare()
 
     def initialize(self):
         self.execution_start_datetime: Optional[datetime] = None
         self.execution_end_datetime: Optional[datetime] = None
         watch_dir = self.normal_path(self.serverapp.root_dir or '.')
-        self.global_watcher.start_if_not(self, watch_dir)
+        self.global_watcher = FileWatcher(self.file_id_manager).start_if_not(watch_dir)
+
+    def finish(self, *args, **kwargs):
+        return super().finish(*args, **kwargs)
 
     @property
-    def file_id_manager(self):
-        return self.settings.get("file_id_manager")
+    def file_id_manager(self) -> FileIDWrapper:
+        return FileIDWrapper(self.settings.get("file_id_manager"))
 
     def normal_path(self, path):
-        if not path:
-            return None
-
-        if self.file_id_manager:
-            return self.file_id_manager._normalize_path(path)
-        return path
+        return self.file_id_manager.normalize_path(path)
 
     def index(self, path):
-        # file_id_manager prefer abs path
-        path = self.normal_path(path)
-        if not path:
-            return None
-        if self.file_id_manager:
-            return self.file_id_manager.index(path)
-        else:
-            return path
+        return self.file_id_manager.index(path)
 
     def get_path(self, document_id):
-        if not document_id:
-            return None
-
-        if self.file_id_manager:
-            # Compatible with the case where document_id not found
-            row = self.file_id_manager.con.execute("SELECT path, ino FROM Files WHERE id = ?",
-                                                   (document_id,)).fetchone()
-            path, ino = row
-            stat_info = self.file_id_manager._stat(path)
-
-            if stat_info and ino == stat_info.ino:
-                return self.file_id_manager._from_normalized_path(path)
-            path = self.file_id_manager.get_path(document_id) or document_id
-            self.log.debug(f'convert id {document_id} to file {path}')
-        else:
-            path = document_id
-        return path
+        return self.file_id_manager.get_path(document_id)
 
     def get_document_id(self, path):
-        # file_id_manager prefer abs path
-        path = self.normal_path(path)
-        if not path:
-            return None
-
-        if self.file_id_manager:
-            # Compatible with the case where document_id not found
-            document_id = self.file_id_manager.get_id(path) or self.index(path)
-            self.log.debug(f'tracking file {path} with id {document_id}')
-        else:
-            document_id = path
-        return document_id
+        return self.file_id_manager.get_id(path)
 
     @tornado.web.authenticated
     async def get(self, kernel_id):
@@ -89,7 +61,6 @@ class ExecuteCellHandler(APIHandler):
             raise tornado.web.HTTPError(404, f"No such kernel {kernel_id}")
 
         records = self.executing_cell.get(kernel_id, [])
-        # fixme: Competition when watcher not notified but query here
         response = [
             {
                 "path": self.get_path(record['document_id']),
@@ -162,7 +133,11 @@ class ExecuteCellHandler(APIHandler):
             self.log.debug("async execute code, write result to file")
 
             async def write_callback():
-                await self.write_output(document_id, cell_id, client.get_result())
+                try:
+                    await self.write_output(document_id, cell_id, client.get_result())
+                except Exception as e:
+                    self.log.error('Exception when writing result to file')
+                    self.log.exception(e)
 
             if not not_write:
                 client.register_callback(write_callback)
