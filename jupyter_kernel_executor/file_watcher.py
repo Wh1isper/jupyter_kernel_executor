@@ -4,6 +4,8 @@ from typing import Optional, List
 
 from watchfiles import awatch, Change
 
+from jupyter_kernel_executor.fileid import FileIDWrapper
+
 
 class Singleton(type):
     _instances = {}
@@ -15,31 +17,37 @@ class Singleton(type):
 
 
 class FileWatcher(metaclass=Singleton):
-    def __init__(self):
+    def __init__(self, file_id_manager):
         self.task: Optional[asyncio.Task] = None
-        self.handler: Optional = None
+        self.file_id_manager: Optional[FileIDWrapper] = file_id_manager
+        self.handlers = []
 
     @property
     def log(self):
-        return self.handler.log
-
-    @property
-    def file_id_manager(self):
-        return self.handler.file_id_manager
+        return getattr(self.file_id_manager, 'log')
 
     @property
     def con(self):
-        return self.handler.file_id_manager.con
+        return getattr(self.file_id_manager, 'con')
 
-    def initialize(self, handler):
-        self.handler = handler
+    def add(self, handle):
+        self.handlers.append(handle)
 
-    def start_if_not(self, handler, root_dir):
+    def remove(self, handle):
+        self.handlers.remove(handle)
+        # last exit, cleanup
+        if not self.handlers:
+            self.cancel()
+
+    def cancel(self):
+        if self.task:
+            self.task.cancel()
+
+    def start_if_not(self, root_dir):
         if self.task and not self.task.done():
-            return
-        self.initialize(handler)
-        if not self.file_id_manager:
-            return
+            return self
+        if not self.file_id_manager.enable:
+            return self
 
         self.log.info('Start File watcher')
         if not root_dir:
@@ -63,6 +71,7 @@ class FileWatcher(metaclass=Singleton):
             self.task.cancel()
             del self.task
         self.task = asyncio.create_task(_())
+        return self
 
     def maybe_renamed(self, changed_path: Path, changed_paths: List[Path], other_paths: List[Path],
                       is_added_path):

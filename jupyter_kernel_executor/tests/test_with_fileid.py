@@ -2,6 +2,7 @@ import asyncio
 import os
 import json
 from pathlib import Path
+from uuid import uuid4
 
 import pytest
 import nbformat
@@ -15,7 +16,7 @@ def code():
     return '''
 import time
 print('hello')
-time.sleep(1)
+time.sleep(3)
 print('world')
 '''
 
@@ -43,7 +44,40 @@ def ipynb(jp_root_dir, code):
 from .utils import *
 
 
-async def test_execute_cell(jp_fetch, ipynb):
+async def test_move_file_when_execute(jp_fetch, ipynb, is_file_id_manager):
+    if not is_file_id_manager:
+        return pytest.skip('no file id manager, cannot process itl')
+
+    ipynb_path, cell_id, real_path = ipynb
+
+    kernel_response = await jp_fetch('api', 'kernels', method='POST', body=json.dumps({
+        'name': 'python3',
+        'path': ipynb_path
+    }))
+    kernel_id = json.loads(kernel_response.body)['id']
+
+    body = {
+        "path": ipynb_path,
+        "cell_id": cell_id,
+    }
+
+    # execute code
+    response = await jp_fetch('api', 'kernels', kernel_id, 'execute', method='POST', body=json.dumps(body))
+    assert response.code == 200
+    real_path = rename_random(real_path)
+    await asyncio.sleep(0.1)
+
+    # wait for finished
+    await wait_for_finished(jp_fetch, kernel_id, ipynb_path, cell_id)
+
+    outputs = [{'name': 'stdout', 'output_type': 'stream', 'text': 'hello\n'},
+               {'name': 'stdout', 'output_type': 'stream', 'text': 'world\n'}]
+    await assert_ipynb_cell_outputs(real_path, cell_id, outputs)
+
+
+async def test_modify_file_when_execute(jp_fetch, ipynb, is_file_id_manager):
+    if not is_file_id_manager:
+        return pytest.skip('no file id manager, cannot process itl')
     ipynb_path, cell_id, real_path = ipynb
 
     kernel_response = await jp_fetch('api', 'kernels', method='POST', body=json.dumps({
@@ -61,33 +95,17 @@ async def test_execute_cell(jp_fetch, ipynb):
     response = await jp_fetch('api', 'kernels', kernel_id, 'execute', method='POST', body=json.dumps(body))
     assert response.code == 200
 
+    # modified time change, expect sync it normally
+    with open(real_path, 'a+') as f:
+        f.write('\n')
+    await asyncio.sleep(0.1)
+
     # wait for finished
     await wait_for_finished(jp_fetch, kernel_id, ipynb_path, cell_id)
 
     outputs = [{'name': 'stdout', 'output_type': 'stream', 'text': 'hello\n'},
                {'name': 'stdout', 'output_type': 'stream', 'text': 'world\n'}]
     await assert_ipynb_cell_outputs(real_path, cell_id, outputs)
-
-
-async def test_execute_code(jp_fetch):
-    # will block and execute code, response result of the code
-    kernel_response = await jp_fetch('api', 'kernels', method='POST', body=json.dumps({
-        'name': 'python3',
-        'path': 'NotExist.ipynb'
-    }))
-    kernel_id = json.loads(kernel_response.body)['id']
-
-    body = {
-        "code": "print('hello world')"
-    }
-
-    response = await jp_fetch('api', 'kernels', kernel_id, 'execute', method='POST', body=json.dumps(body))
-
-    assert response.code == 200
-    payload = json.loads(response.body)
-    assert payload == {'code': "print('hello world')",
-                       'outputs': [{'output_type': 'stream', 'name': 'stdout', 'text': 'hello world\n'}],
-                       'execution_count': 1}
 
 
 if __name__ == '__main__':
