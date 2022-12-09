@@ -1,6 +1,6 @@
 {
     "name": "jupyter_kernel_executor",
-    "version": "0.1.1",
+    "version": "0.1.2",
     "description": "jupyter extension for http cell execute",
     "keywords": [
         "jupyter",
