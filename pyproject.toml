@@ -26,7 +26,6 @@ dependencies = [
     "jupyter_server>=1.6,<3",
     "jupyter_kernel_client",
     "watchfiles",
-    "anyio"
 ]
 dynamic = ["version", "description", "authors", "urls", "keywords"]
 
