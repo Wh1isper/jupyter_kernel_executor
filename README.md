@@ -1,11 +1,15 @@
 # jupyter_kernel_executor
 
 [![Github Actions Status](https://github.com/wh1isper/jupyter_kernel_executor/workflows/Build/badge.svg)](https://github.com/wh1isper/jupyter_kernel_executor/actions/workflows/build.yml)
-jupyter extension for http cell execute
+Jupyter extension for http cell execute
+
+![](./img/jupyterlab-co-ex.gif)
+
+![](./img/jupyterlab-co-ex2.gif)
 
 This extension is composed of a Python package named `jupyter_kernel_executor`
 for the server extension and a NPM package named `jupyter_kernel_executor`
-for the frontend extension.
+for the frontend extension.(NPM package is not ready yet)
 
 ## Requirements
 
@@ -17,6 +21,16 @@ To install the extension, execute:
 
 ```bash
 pip install jupyter_kernel_executor
+```
+
+In Linux systems, it is common to use `ext` or similar file systems, and through the `ino` attributes provided by such
+file systems, we can track the movement of files.
+
+If your system meets these requirements, it is recommended that you also install jupyter_server_fileid and configure it
+according to [this document](./FILEID.md)
+
+```bash
+pip install jupyter_kernel_executor[fileid]
 ```
 
 ## Uninstall
@@ -66,7 +80,8 @@ jupyter server extension enable jupyter_kernel_executor
 jlpm build
 ```
 
-You can watch the source directory and run JupyterLab at the same time in different terminals to watch for changes in the extension's source and automatically rebuild the extension.
+You can watch the source directory and run JupyterLab at the same time in different terminals to watch for changes in
+the extension's source and automatically rebuild the extension.
 
 ```bash
 # Watch the source directory in one terminal, automatically rebuilding when needed
@@ -75,9 +90,12 @@ jlpm watch
 jupyter lab
 ```
 
-With the watch command running, every saved change will immediately be built locally and available in your running JupyterLab. Refresh JupyterLab to load the change in your browser (you may need to wait several seconds for the extension to be rebuilt).
+With the watch command running, every saved change will immediately be built locally and available in your running
+JupyterLab. Refresh JupyterLab to load the change in your browser (you may need to wait several seconds for the
+extension to be rebuilt).
 
-By default, the `jlpm build` command generates the source maps for this extension to make it easier to debug using the browser dev tools. To also generate source maps for the JupyterLab core extensions, you can run the following command:
+By default, the `jlpm build` command generates the source maps for this extension to make it easier to debug using the
+browser dev tools. To also generate source maps for the JupyterLab core extensions, you can run the following command:
 
 ```bash
 jupyter lab build --minimize=False
@@ -127,7 +145,8 @@ jlpm test
 #### Integration tests
 
 This extension uses [Playwright](https://playwright.dev/docs/intro/) for the integration tests (aka user level tests).
-More precisely, the JupyterLab helper [Galata](https://github.com/jupyterlab/jupyterlab/tree/master/galata) is used to handle testing the extension in JupyterLab.
+More precisely, the JupyterLab helper [Galata](https://github.com/jupyterlab/jupyterlab/tree/master/galata) is used to
+handle testing the extension in JupyterLab.
 
 More information are provided within the [ui-tests](./ui-tests/README.md) README.
 
