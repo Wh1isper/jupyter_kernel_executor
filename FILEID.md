@@ -29,6 +29,20 @@ or json
 }
 ```
 
+or hack (just an example, don't do it unless you have no other choice)
+
+```python
+def _load_jupyter_server_extension(serverapp):
+    ...
+    try:
+        import jupyter_server_fileid
+    except ImportError:
+        return
+    serverapp.web_app.settings['file_id_manager'] = jupyter_server_fileid.manager.LocalFileIdManager(
+        log=serverapp.log, root_dir=serverapp.root_dir, config=serverapp.config
+    )
+```
+
 ## Troubleshooting
 
 If any problems occur, you can try to clear the fileid record database, which will not corrupt your code files
