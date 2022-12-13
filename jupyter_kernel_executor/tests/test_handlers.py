@@ -69,6 +69,32 @@ async def test_execute_cell(jp_fetch, ipynb):
     await assert_ipynb_cell_outputs(real_path, cell_id, outputs)
 
 
+async def test_execute_cell_abspath(jp_fetch, ipynb):
+    ipynb_path, cell_id, real_path = ipynb
+    ipynb_path = '/' + ipynb_path
+    kernel_response = await jp_fetch('api', 'kernels', method='POST', body=json.dumps({
+        'name': 'python3',
+        'path':  ipynb_path
+    }))
+    kernel_id = json.loads(kernel_response.body)['id']
+
+    body = {
+        "path": ipynb_path,
+        "cell_id": cell_id,
+    }
+
+    # execute code
+    response = await jp_fetch('api', 'kernels', kernel_id, 'execute', method='POST', body=json.dumps(body))
+    assert response.code == 200
+
+    # wait for finished
+    await wait_for_finished(jp_fetch, kernel_id, ipynb_path, cell_id)
+
+    outputs = [{'name': 'stdout', 'output_type': 'stream', 'text': 'hello\n'},
+               {'name': 'stdout', 'output_type': 'stream', 'text': 'world\n'}]
+    await assert_ipynb_cell_outputs(real_path, cell_id, outputs)
+
+
 async def test_execute_code(jp_fetch):
     # will block and execute code, response result of the code
     kernel_response = await jp_fetch('api', 'kernels', method='POST', body=json.dumps({

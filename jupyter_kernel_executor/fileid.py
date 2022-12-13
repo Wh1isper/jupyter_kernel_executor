@@ -30,6 +30,8 @@ class FileIDWrapper:
             return path
 
     def index(self, path):
+        if path:
+            path = path.lstrip('/')
         path = self.normalize_path(path)
         if not path:
             return None
