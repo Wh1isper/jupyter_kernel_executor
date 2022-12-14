@@ -22,19 +22,11 @@ class ExecuteCellHandler(APIHandler):
     watch_document: Dict[str, asyncio.Task] = dict()
     SAVE_INTERVAL = 0.3
 
-    def prepare(self):
-        self.global_watcher.add(self)
-        return super().prepare()
-
-    def on_finish(self):
-        self.global_watcher.remove(self)
-        return super().prepare()
-
     def initialize(self):
         self.execution_start_datetime: Optional[datetime] = None
         self.execution_end_datetime: Optional[datetime] = None
-        watch_dir = self.normal_path(self.serverapp.root_dir or '.')
-        self.global_watcher = FileWatcher(self.file_id_manager).start_if_not(watch_dir)
+        self.watch_dir = self.normal_path(self.serverapp.root_dir or '.')
+        self.global_watcher = FileWatcher(self.file_id_manager)
 
     def finish(self, *args, **kwargs):
         return super().finish(*args, **kwargs)
@@ -118,6 +110,7 @@ class ExecuteCellHandler(APIHandler):
 
         client = KernelWebsocketClient(
             kernel_id=kernel_id,
+            host=self.serverapp.ip,
             port=self.serverapp.port,
             base_url=self.base_url,
             token=self.token,
@@ -173,11 +166,13 @@ class ExecuteCellHandler(APIHandler):
             if self.file_id_manager:
                 self.watch(document_id)
         self.execution_start_datetime = datetime.now()
+        self.global_watcher.add(self)
+        self.global_watcher.start_if_not(self.watch_dir)
 
     async def post_execute(self, kernel_id, document_id, cell_id):
         self.execution_end_datetime = datetime.now()
-        if not (document_id and cell_id):
-            return
+        # prevent memory leak
+        self.global_watcher.remove(self)
         records = self.executing_cell.get(kernel_id, [])
         if document_id and cell_id:
             record = self.get_record(document_id, cell_id)

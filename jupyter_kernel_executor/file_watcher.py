@@ -54,6 +54,10 @@ class FileWatcher(metaclass=Singleton):
             root_dir = '.'
 
         async def _():
+            # fixme There is this error on server shutdown
+            # RuntimeError: Already borrowed
+            # https://github.com/samuelcolvin/watchfiles/issues/200
+            # https://github.com/PyO3/pyo3/issues/2525
             async for changes in awatch(root_dir):
                 deleted_paths = []
                 added_paths = []
