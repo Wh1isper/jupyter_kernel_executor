@@ -61,7 +61,7 @@ jupyter labextension list
 
 ### Server extension API
 
-[API docs in OpenAPI3](./api.yaml)
+[API docs in OpenAPI3](./api.yaml), using [Swagger Editor](https://editor.swagger.io/) can view it online
 
 ### Development install
 

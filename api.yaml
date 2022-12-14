@@ -82,6 +82,10 @@ paths:
 components:
   schemas:
     RunningCell:
+      required:
+        - path
+        - cell_id
+
       properties:
         path:
           type: string
@@ -91,15 +95,16 @@ components:
           description: running cell's id
 
     RunCell:
+      required:
+        - path
+        - cell_id
       properties:
         path:
           type: string
           description: ipynb path
-          required: true
         cell_id:
           type: string
           description: the id of the cell where the code is to be executed
-          required: true
         block:
           type: boolean
           description: execute code sync or not
@@ -111,11 +116,12 @@ components:
 
 
     RunCode:
+      required:
+        - code
       properties:
         code:
           type: string
           description: code to be executed
-          required: true
         block:
           type: boolean
           description: execute code sync or not
