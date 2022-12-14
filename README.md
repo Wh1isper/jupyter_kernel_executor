@@ -59,6 +59,10 @@ jupyter labextension list
 
 ## Contributing
 
+### Server extension API
+
+[API docs in OpenAPI3](./api.yaml)
+
 ### Development install
 
 Note: You will need NodeJS to build the extension package.
