@@ -34,7 +34,8 @@ class FileWatcher(metaclass=Singleton):
         self.handlers.append(handle)
 
     def remove(self, handle):
-        self.handlers.remove(handle)
+        if handle in self.handlers:
+            self.handlers.remove(handle)
         # last exit, cleanup
         if not self.handlers:
             self.cancel()
@@ -49,7 +50,7 @@ class FileWatcher(metaclass=Singleton):
         if not self.file_id_manager.enable:
             return self
 
-        self.log.info('Start File watcher')
+        self.log.info('Start global file watcher')
         if not root_dir:
             root_dir = '.'
 
@@ -69,6 +70,8 @@ class FileWatcher(metaclass=Singleton):
                     elif change == Change.added:
                         added_paths.append(changed_path)
                         self.maybe_renamed(changed_path, added_paths, deleted_paths, is_added_path=True)
+                    elif change == Change.modified:
+                        self.file_id_manager.save(changed_path)
 
         # recreate task
         if self.task:

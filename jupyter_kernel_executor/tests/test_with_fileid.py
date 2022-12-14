@@ -65,7 +65,6 @@ async def test_move_file_when_execute(jp_fetch, ipynb, is_file_id_manager):
     response = await jp_fetch('api', 'kernels', kernel_id, 'execute', method='POST', body=json.dumps(body))
     assert response.code == 200
     real_path = rename_random(real_path)
-    await asyncio.sleep(0.1)
 
     # wait for finished
     await wait_for_finished(jp_fetch, kernel_id, ipynb_path, cell_id)

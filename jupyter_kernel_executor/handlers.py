@@ -129,7 +129,7 @@ class ExecuteCellHandler(APIHandler):
                 try:
                     await self.write_output(document_id, cell_id, client.get_result())
                 except Exception as e:
-                    self.log.error('Exception when writing result to file')
+                    self.log.error('Exception when asynchronous writing result to file')
                     self.log.exception(e)
 
             if not not_write:
@@ -163,18 +163,17 @@ class ExecuteCellHandler(APIHandler):
             self.executing_cell.setdefault(kernel_id, []).append(
                 self.get_record(document_id, cell_id)
             )
-            if self.file_id_manager:
-                self.watch(document_id)
+            self.global_watcher.add(self)
+            self.global_watcher.start_if_not(self.watch_dir)
+
         self.execution_start_datetime = datetime.now()
-        self.global_watcher.add(self)
-        self.global_watcher.start_if_not(self.watch_dir)
 
     async def post_execute(self, kernel_id, document_id, cell_id):
         self.execution_end_datetime = datetime.now()
-        # prevent memory leak
-        self.global_watcher.remove(self)
         records = self.executing_cell.get(kernel_id, [])
         if document_id and cell_id:
+            # prevent memory leak
+            self.global_watcher.remove(self)
             record = self.get_record(document_id, cell_id)
             if record in records:
                 records.remove(record)
@@ -182,7 +181,6 @@ class ExecuteCellHandler(APIHandler):
             task = self.saving_document.get(document_id)
             if task:
                 await task
-            self.unwatch(document_id)
 
     def get_record(self, document_id, cell_id):
         return {

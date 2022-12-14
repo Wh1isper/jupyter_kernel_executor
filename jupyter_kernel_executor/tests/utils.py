@@ -41,14 +41,6 @@ async def wait_for_finished(jp_fetch, kernel_id, path, cell_id):
         await asyncio.sleep(INTERVAL)
     else:
         raise TimeoutError('execute code timeout')
-#
-#
-# def is_file_id_manager():
-#     try:
-#         import jupyter_server_fileid
-#     except ImportError:
-#         return False
-#     return True
 
 
 def rename_random(real_path):
