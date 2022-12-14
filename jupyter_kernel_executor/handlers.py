@@ -81,7 +81,7 @@ class ExecuteCellHandler(APIHandler):
         Optional:
             block(bool): execute code sync or not, when path and cell_id available, default to False(not block)
                          or True(execute code sync), when block is True, response result
-            not_write(bool): default to False,False means try to write result to document's cell
+            not_write(bool): default to False, False means try to write result to document's cell
 
         """
         if not self.kernel_manager.get_kernel(kernel_id):

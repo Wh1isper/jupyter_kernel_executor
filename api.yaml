@@ -1,0 +1,137 @@
+openapi: 3.0.3
+info:
+  title: jupyter_kernel_executor
+  description: jupyter_kernel_executor api docs
+  version: 1.0.0
+paths:
+  /api/kernels/{kernel_id}/execute:
+    get:
+      description: Return list of running ipynb and the cell
+      parameters:
+        - name: kernel_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: return a list of ipynb and the cell running on kernel(Only cells executed through the post interface are supported)
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/RunningCell"
+              example:
+                - path: "6b622b5c-1e10-4bbc-b301-8280d7f242d9"
+                  cell_id: "3962355d-f2fb-40c8-9845-58b7b9153083"
+        '404':
+          description: kernel can not be found
+    post:
+      description: Synchronously or asynchronously execute a cell in ipynb file (optionally with or without writing the result to code) or a piece of code directly on kernel
+      parameters:
+        - name: kernel_id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - $ref: '#/components/schemas/RunCell'
+                - $ref: '#/components/schemas/RunCode'
+            examples:
+              run_cell:
+                value:
+                  path: "6b622b5c-1e10-4bbc-b301-8280d7f242d9"
+                  cell_id: "3962355d-f2fb-40c8-9845-58b7b9153083"
+                summary: running a cell asynchronously and save result to ipynb file
+              run_code:
+                value:
+                  code: "print('hello world')"
+                summary: running code synchronously
+
+      responses:
+        '200':
+          description: Start code execution (block=False) or execute code then return result (block=True)
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/RunCell'
+                  - $ref: '#/components/schemas/RunCodeResult'
+              examples:
+                run_cell:
+                  value:
+                    path: "6b622b5c-1e10-4bbc-b301-8280d7f242d9"
+                    cell_id: "3962355d-f2fb-40c8-9845-58b7b9153083"
+                  summary: running a cell asynchronously and save result to ipynb file
+                run_code:
+                  value:
+                    code: "print('hello world')"
+                    outputs:
+                      - output_type: 'stream'
+                        name: 'stdout'
+                        text: 'hello world\n'
+                    execution_count: 1
+                  summary: running code synchronously
+
+
+components:
+  schemas:
+    RunningCell:
+      properties:
+        path:
+          type: string
+          description: ipynb path
+        cell_id:
+          type: string
+          description: running cell's id
+
+    RunCell:
+      properties:
+        path:
+          type: string
+          description: ipynb path
+          required: true
+        cell_id:
+          type: string
+          description: the id of the cell where the code is to be executed
+          required: true
+        block:
+          type: boolean
+          description: execute code sync or not
+          default: false
+        not_write:
+          type: boolean
+          description: write result to file or not
+          default: false
+
+
+    RunCode:
+      properties:
+        code:
+          type: string
+          description: code to be executed
+          required: true
+        block:
+          type: boolean
+          description: execute code sync or not
+          default: true
+        not_write:
+          type: boolean
+          description: no effect
+          default: false
+
+    RunCodeResult:
+      allOf:
+        - $ref: '#/components/schemas/RunCell'
+      properties:
+        outputs:
+          type: array
+          description: nbformat.NotebookNode
+        execution_count:
+          type: integer
+          description: Execution_count of this code execution
