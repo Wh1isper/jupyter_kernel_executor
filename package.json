@@ -54,14 +54,14 @@
         "watch:labextension": "jupyter labextension watch ."
     },
     "dependencies": {
-        "@jupyterlab/application": "^3.5.1",
-        "@jupyterlab/apputils": "^3.5.1",
-        "@jupyterlab/coreutils": "^5.1.0",
-        "@jupyterlab/docregistry": "^3.5.1",
-        "@jupyterlab/notebook": "^3.5.1",
-        "@jupyterlab/services": "^6.1.0",
-        "@jupyterlab/ui-components": "^3.5.1",
-        "@lumino/disposable": "^1.10.3"
+        "@jupyterlab/application": "^4.0.0-alpha.16",
+        "@jupyterlab/apputils": "^4.0.0-alpha.16",
+        "@jupyterlab/coreutils": "^6.0.0-alpha.16",
+        "@jupyterlab/docregistry": "^4.0.0-alpha.16",
+        "@jupyterlab/notebook": "^4.0.0-alpha.16",
+        "@jupyterlab/services": "^7.0.0-alpha.16",
+        "@jupyterlab/ui-components": "^4.0.0-alpha.31",
+        "@lumino/disposable": "^2.0.0-alpha.6"
     },
     "devDependencies": {
         "@babel/core": "^7.0.0",
