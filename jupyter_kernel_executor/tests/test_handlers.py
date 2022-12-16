@@ -1,10 +1,7 @@
-import asyncio
 import os
-import json
 from pathlib import Path
 
 import pytest
-import nbformat
 
 _here = Path(os.path.abspath(os.path.dirname(__file__)))
 INTERVAL = 1
@@ -74,7 +71,7 @@ async def test_execute_cell_abspath(jp_fetch, ipynb):
     ipynb_path = '/' + ipynb_path
     kernel_response = await jp_fetch('api', 'kernels', method='POST', body=json.dumps({
         'name': 'python3',
-        'path':  ipynb_path
+        'path': ipynb_path
     }))
     kernel_id = json.loads(kernel_response.body)['id']
 
