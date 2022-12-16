@@ -71,6 +71,7 @@ class FileWatcher(metaclass=Singleton):
                         added_paths.append(changed_path)
                         self.maybe_renamed(changed_path, added_paths, deleted_paths, is_added_path=True)
                     elif change == Change.modified:
+                        # Only modified can use save
                         self.file_id_manager.save(changed_path)
 
         # recreate task
@@ -96,10 +97,7 @@ class FileWatcher(metaclass=Singleton):
                     src = op
                 else:
                     dst = op
-                if src.as_posix() == dst.as_posix():
-                    self.file_id_manager.save(src.as_posix())
-                else:
-                    self.file_id_manager.move(src.as_posix(), dst.as_posix())
+                self.file_id_manager.move(src.as_posix(), dst.as_posix())
                 return
 
     def get_mtime(self, path):
