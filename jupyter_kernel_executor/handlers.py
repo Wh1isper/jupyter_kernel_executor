@@ -18,9 +18,7 @@ class ExecuteCellHandler(APIHandler):
     executing_cell: Dict[str, List[
         Dict[str, str]]
     ] = dict()
-    saving_document: Dict[str, asyncio.Task] = dict()
-    watch_document: Dict[str, asyncio.Task] = dict()
-    SAVE_INTERVAL = 0.3
+    save_lock = asyncio.Lock()
 
     def initialize(self):
         self.execution_start_datetime: Optional[datetime] = None
@@ -33,7 +31,7 @@ class ExecuteCellHandler(APIHandler):
 
     @property
     def file_id_manager(self) -> FileIDWrapper:
-        return FileIDWrapper(self.settings.get("file_id_manager"))
+        return FileIDWrapper(self.settings.get("file_id_manager"), self.save_lock)
 
     def normal_path(self, path):
         return self.file_id_manager.normalize_path(path)
@@ -41,8 +39,8 @@ class ExecuteCellHandler(APIHandler):
     def index(self, path):
         return self.file_id_manager.index(path)
 
-    def get_path(self, document_id):
-        return self.file_id_manager.get_path(document_id)
+    async def get_path(self, document_id):
+        return await self.file_id_manager.get_path(document_id)
 
     def get_document_id(self, path):
         return self.file_id_manager.get_id(path)
@@ -55,7 +53,7 @@ class ExecuteCellHandler(APIHandler):
         records = self.executing_cell.get(kernel_id, [])
         response = [
             {
-                "path": self.get_path(record['document_id']),
+                "path": await self.get_path(record['document_id']),
                 "cell_id": record['cell_id'],
             } for record in records
         ]
@@ -177,10 +175,6 @@ class ExecuteCellHandler(APIHandler):
             record = self.get_record(document_id, cell_id)
             if record in records:
                 records.remove(record)
-        if self.file_id_manager:
-            task = self.saving_document.get(document_id)
-            if task:
-                await task
 
     def get_record(self, document_id, cell_id):
         return {
@@ -192,7 +186,7 @@ class ExecuteCellHandler(APIHandler):
         if not document_id or not cell_id:
             return None
         cm = self.contents_manager
-        path = self.get_path(document_id)
+        path = await self.get_path(document_id)
         model = await ensure_async(cm.get(path, content=True, type='notebook'))
         nb = model['content']
         for cell in nb['cells']:
@@ -204,62 +198,23 @@ class ExecuteCellHandler(APIHandler):
         if not document_id or not cell_id:
             return
         cm = self.contents_manager
-        path = self.get_path(document_id)
-        model = await ensure_async(cm.get(path, content=True, type='notebook'))
-        nb = model['content']
-        updated = False
-        for cell in nb['cells']:
-            if cell['id'] == cell_id:
-                if result['outputs'] != cell["outputs"]:
-                    cell["outputs"] = result['outputs']
-                    updated = True
-                if result['execution_count']:
-                    cell['execution_count'] = int(result['execution_count'])
-                    updated = True
-                break
-        if updated:
-            await self._save(document_id, model)
-
-    async def _save(self, document_id, model):
-        cm = self.contents_manager
-
-        async def save():
-            await asyncio.sleep(self.SAVE_INTERVAL)
-            path = self.get_path(document_id)
-            await ensure_async(cm.save(model, path))
-
-        if document_id in self.saving_document:
-            self.saving_document[document_id].cancel()
-        task = asyncio.create_task(save())
-        self.saving_document[document_id] = task
-
-    def watch(self, document_id):
-        assert self.file_id_manager
-
-        path = self.get_path(document_id)
-        path = os.path.join(self.serverapp.root_dir, path)
-
-        async def _():
-            # fixme There is this error on server shutdown
-            # RuntimeError: Already borrowed
-            # https://github.com/samuelcolvin/watchfiles/issues/200
-            # https://github.com/PyO3/pyo3/issues/2525
-            async for changes in awatch(path):
-                for change, _ in changes:
-                    if change == Change.modified:
-                        self.file_id_manager.save(path)
-                    else:
-                        return
-
-        if document_id not in self.watch_document:
-            self.watch_document[document_id] = asyncio.create_task(_())
-
-    def unwatch(self, document_id):
-        if document_id not in self.executing_document():
-            task = self.watch_document.get(document_id)
-            if task:
-                task.cancel()
-                del self.watch_document[document_id]
+        path = await self.get_path(document_id)
+        async with self.save_lock:
+            model = await ensure_async(cm.get(path, content=True, type='notebook'))
+            nb = model['content']
+            updated = False
+            for cell in nb['cells']:
+                if cell['id'] == cell_id:
+                    if result['outputs'] != cell["outputs"]:
+                        cell["outputs"] = result['outputs']
+                        updated = True
+                    if result['execution_count']:
+                        cell['execution_count'] = int(result['execution_count'])
+                        updated = True
+                    break
+            if updated:
+                await ensure_async(cm.save(model, path))
+                self.file_id_manager.save(path)
 
     def executing_document(self):
         executing_document = []
