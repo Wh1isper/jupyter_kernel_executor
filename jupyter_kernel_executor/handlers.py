@@ -45,6 +45,18 @@ class ExecuteCellHandler(APIHandler):
     def get_document_id(self, path):
         return self.file_id_manager.get_id(path)
 
+    def get_request_auth(self):
+        auth_in_header = self.request.headers.get('Authorization')
+        return {
+            'Authorization': auth_in_header
+        } if auth_in_header else dict()
+
+    def get_auth_header(self):
+        # v2 using identity_provider for token
+        provider = getattr(self, "identity_provider", self.serverapp)
+
+        return {"Authorization": f"token {provider.token}"}
+
     @tornado.web.authenticated
     async def get(self, kernel_id):
         if not self.kernel_manager.get_kernel(kernel_id):
@@ -106,12 +118,17 @@ class ExecuteCellHandler(APIHandler):
         else:
             block = False
 
+        auth_header = self.get_request_auth()
+        if not auth_header:
+            # fallback using app setting, May not be compatible with jupyterhub-singleuser or other singleuser app
+            auth_header = self.get_auth_header()
+
         client = KernelWebsocketClient(
             kernel_id=kernel_id,
             host=self.serverapp.ip,
             port=self.serverapp.port,
             base_url=self.base_url,
-            token=self.token,
+            auth_header=auth_header,
             encoded=True,
         )
         code = model.get('code') or await self.read_code_from_ipynb(
