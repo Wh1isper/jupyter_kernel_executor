@@ -1,6 +1,5 @@
-import { URLExt } from '@jupyterlab/coreutils';
-
-import { ServerConnection } from '@jupyterlab/services';
+import {URLExt} from '@jupyterlab/coreutils';
+import {ServerConnection} from '@jupyterlab/services';
 
 /**
  * Call the API extension
@@ -9,7 +8,7 @@ import { ServerConnection } from '@jupyterlab/services';
  * @param init Initial values for the request
  * @returns The response body interpreted as JSON
  */
-export async function requestAPI<T>(
+async function requestAPI<T>(
   endPoint = '',
   init: RequestInit = {}
 ): Promise<T> {
@@ -17,7 +16,7 @@ export async function requestAPI<T>(
   const settings = ServerConnection.makeSettings();
   const requestUrl = URLExt.join(
     settings.baseUrl,
-    'jupyter-kernel-executor', // API Namespace
+    'api/kernels/', // API Namespace
     endPoint
   );
 
@@ -25,7 +24,7 @@ export async function requestAPI<T>(
   try {
     response = await ServerConnection.makeRequest(requestUrl, init, settings);
   } catch (error) {
-    throw new ServerConnection.NetworkError(error);
+    throw new ServerConnection.NetworkError(error as any);
   }
 
   let data: any = await response.text();
@@ -42,5 +41,27 @@ export async function requestAPI<T>(
     throw new ServerConnection.ResponseError(response, data.message || data);
   }
 
+  return data;
+}
+
+
+export async function execute_cell<T>(
+  notebook_path: string,
+  cell_id: string,
+  kernel_id: string
+): Promise<T> {
+  const body = JSON.stringify(
+    {
+      "path": notebook_path,
+      "cell_id": cell_id
+    }
+  )
+  const data = await requestAPI<any>(
+    `${kernel_id}/execute`,
+    {
+      "body": body,
+      "method": "POST",
+    })
+  console.log(data)
   return data;
 }
