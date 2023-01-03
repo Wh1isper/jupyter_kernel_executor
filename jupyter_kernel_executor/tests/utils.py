@@ -25,7 +25,9 @@ async def assert_ipynb_cell_outputs(real_path, cell_id, outputs):
                     return
                 except:
                     pass
-    assert cell_output == outputs
+    raise TimeoutError(
+        f"Timeout waiting for cell_output == expected, cell_output:{cell_output}, expected outputs:{outputs}"
+    )
 
 
 async def wait_for_finished(jp_fetch, kernel_id, path, cell_id):

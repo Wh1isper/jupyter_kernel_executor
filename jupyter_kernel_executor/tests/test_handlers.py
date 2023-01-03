@@ -5,20 +5,19 @@ import pytest
 
 _here = Path(os.path.abspath(os.path.dirname(__file__)))
 INTERVAL = 1
-
-
-@pytest.fixture
-def code():
-    return '''
+str_code = '''
 import time
 print('hello')
 time.sleep(1)
 print('world')
 '''
 
+list_code = [line + '\n' for line in str_code.split('\n')]
 
-@pytest.fixture
-def ipynb(jp_root_dir, code):
+
+@pytest.fixture(name='ipynb', params=(list_code,))
+def _ipynb(request, jp_root_dir):
+    code = request.param
     example_ipynb_path = _here / "test.ipynb"
     test_ipynb_path = "test.ipynb"
 
