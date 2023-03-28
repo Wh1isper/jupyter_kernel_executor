@@ -1,3 +1,7 @@
+This project has successfully verified the use of Jupyter backend for code execution and file writing solution, looking forward to the final implementation on [jupyverse](https://github.com/jupyter-server/jupyverse)
+
+Thanks [@matthewwiese](https://github.com/matthewwiese) !
+
 # jupyter_kernel_executor
 
 [![Github Actions Status](https://github.com/wh1isper/jupyter_kernel_executor/workflows/Build/badge.svg)](https://github.com/wh1isper/jupyter_kernel_executor/actions/workflows/build.yml)
