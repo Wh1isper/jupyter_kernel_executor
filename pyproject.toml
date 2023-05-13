@@ -37,6 +37,7 @@ test = [
     "pytest-cov",
     "pytest-tornasync",
     "nbformat",
+    "jupyter_server[test]>=2.0.0a0"
 ]
 
 fileid = [
